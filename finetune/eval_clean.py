@@ -41,7 +41,8 @@ def generate_predictions(cfg_name: str = "qlora_clean.yaml") -> list[dict]:
 
     tokenizer = AutoTokenizer.from_pretrained(adapter_path)
     base = AutoModelForCausalLM.from_pretrained(
-        cfg["base_model"], quantization_config=build_bnb_config(cfg["quant"]), device_map="auto",
+        cfg["base_model"], quantization_config=build_bnb_config(cfg["quant"]),
+        torch_dtype=torch.bfloat16, device_map="auto",
     )
     model = PeftModel.from_pretrained(base, adapter_path)
     model.eval()
@@ -56,7 +57,9 @@ def generate_predictions(cfg_name: str = "qlora_clean.yaml") -> list[dict]:
         prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
         with torch.no_grad():
-            out = model.generate(**inputs, max_new_tokens=1024, do_sample=False)
+            # Measured max target in the labeled dataset is 697 tokens; 1536 gives headroom
+            # for full-corpus chunks that may need more correction/expansion than the sample.
+            out = model.generate(**inputs, max_new_tokens=1536, do_sample=False)
         text = tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
         predictions.append({**rec, "prediction": text.strip()})
 

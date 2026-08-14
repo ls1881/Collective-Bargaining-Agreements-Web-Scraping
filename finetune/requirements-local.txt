@@ -1,0 +1,10 @@
+# Local-only steps (data_prep.py, distill_labels.py, review_sample.py, chat_sample.py,
+# eval post-processing without --generate): runs fine on the M3 Max, no CUDA/bitsandbytes
+# needed. Install with: pip install -r finetune/requirements-local.txt
+pandas
+numpy
+anthropic
+tqdm
+jiwer
+jsonschema
+pyyaml

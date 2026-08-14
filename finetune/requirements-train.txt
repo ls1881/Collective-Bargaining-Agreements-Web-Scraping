@@ -1,0 +1,23 @@
+# GPU training env (train_clean_lora.py, train_extract_lora.py, eval_*.py --generate).
+# Install on the rented CUDA GPU instance: pip install -r finetune/requirements-train.txt
+#
+# Versions are pinned exactly, not left as open ranges. train_common.py's SFTTrainer call
+# (TrainingArguments + a direct max_seq_length kwarg + tokenizer= kwarg + a custom
+# formatting_func/data_collator combo) matches this specific TRL generation's API. Newer TRL
+# (0.12+) deprecated/replaced several of these in favor of SFTConfig and processing_class, and
+# would fail immediately on a fresh install with an unpinned `trl>=0.9`. Do not `pip install -U`
+# any of these individually without re-checking train_common.py against the new API first.
+torch==2.4.0
+transformers==4.44.2
+peft==0.12.0
+bitsandbytes==0.43.3
+trl==0.9.6
+accelerate==0.33.0
+datasets==2.21.0
+sentencepiece==0.2.0
+pyyaml==6.0.2
+wandb==0.17.9
+
+# Run finetune/smoke_test.py right after installing, before launching a real training run —
+# it validates the whole model-load -> LoRA -> forward/backward path in under a minute of GPU
+# time, so a version/config problem is caught immediately instead of after 20+ paid minutes.

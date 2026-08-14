@@ -95,6 +95,8 @@ def load_base_model_and_tokenizer(base_model: str, quant_cfg: dict):
     model = AutoModelForCausalLM.from_pretrained(
         base_model,
         quantization_config=build_bnb_config(quant_cfg),
+        torch_dtype=torch.bfloat16,  # non-quantized layers (embeddings, norms) default to fp32
+        # otherwise, using meaningfully more VRAM than needed on a 24GB card for no benefit.
         device_map="auto",
     )
     model = prepare_model_for_kbit_training(model)
@@ -123,14 +125,18 @@ def run_training(config_name: str, train_ds: Dataset, val_ds: Dataset, model, to
     def formatting_func(example):
         return tokenizer.apply_chat_template(example["messages"], tokenize=False)
 
-    collator = DataCollatorForCompletionOnlyLM(response_template, tokenizer=tokenizer)
+    # Pass the response template as pre-tokenized ids (TRL's documented safer form) rather
+    # than a raw string, so matching is exact regardless of how surrounding text tokenizes.
+    response_template_ids = tokenizer.encode(response_template, add_special_tokens=False)
+    collator = DataCollatorForCompletionOnlyLM(response_template_ids, tokenizer=tokenizer)
 
     lora_config = build_lora_config(cfg["lora"])
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
 
+    checkpoint_dir = os.path.join(BASE_DIR, cfg["adapter_out"] + "-checkpoints")
     args = TrainingArguments(
-        output_dir=os.path.join(BASE_DIR, cfg["adapter_out"] + "-checkpoints"),
+        output_dir=checkpoint_dir,
         per_device_train_batch_size=train_cfg["per_device_train_batch_size"],
         gradient_accumulation_steps=train_cfg["gradient_accumulation_steps"],
         learning_rate=train_cfg["learning_rate"],
@@ -139,10 +145,16 @@ def run_training(config_name: str, train_ds: Dataset, val_ds: Dataset, model, to
         num_train_epochs=train_cfg["num_train_epochs"],
         bf16=train_cfg["bf16"],
         gradient_checkpointing=train_cfg["gradient_checkpointing"],
+        # Common QLoRA + gradient-checkpointing gotcha: with the reentrant checkpointing
+        # implementation (the default in some torch/transformers version combos), a
+        # frozen-base + trainable-LoRA-adapter model can hit "element 0 of tensors does not
+        # require grad" at the first backward pass. use_reentrant=False avoids it.
+        gradient_checkpointing_kwargs={"use_reentrant": False},
         eval_strategy=train_cfg["eval_strategy"],
         eval_steps=train_cfg["eval_steps"],
         save_strategy=train_cfg["save_strategy"],
         save_steps=train_cfg["save_steps"],
+        save_total_limit=3,  # keep disk usage bounded; load_best_model_at_end always keeps the best one too
         load_best_model_at_end=train_cfg["load_best_model_at_end"],
         metric_for_best_model=train_cfg["metric_for_best_model"],
         logging_steps=train_cfg["logging_steps"],
@@ -160,7 +172,12 @@ def run_training(config_name: str, train_ds: Dataset, val_ds: Dataset, model, to
         max_seq_length=cfg["max_seq_length"],
         tokenizer=tokenizer,
     )
-    trainer.train()
+
+    from transformers.trainer_utils import get_last_checkpoint
+    last_checkpoint = get_last_checkpoint(checkpoint_dir) if os.path.isdir(checkpoint_dir) else None
+    if last_checkpoint:
+        print(f"Resuming from checkpoint: {last_checkpoint}")
+    trainer.train(resume_from_checkpoint=last_checkpoint)
 
     adapter_out = os.path.join(BASE_DIR, cfg["adapter_out"])
     trainer.model.save_pretrained(adapter_out)

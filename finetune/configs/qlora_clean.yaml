@@ -11,7 +11,10 @@ system_prompt: >
   Correct OCR errors, preserve meaning and legal terminology exactly, and
   mark unrecoverable spans as [ILLEGIBLE]. Output only the corrected text.
 
-max_seq_length: 2048
+# Measured against the actual labeled dataset with the real Qwen2.5 tokenizer: worst-case
+# formatted example (system+user+assistant) is 2186 tokens (doc 14389, chunk 3). 2048 would
+# silently truncate that example's target. Set with headroom above the measured max.
+max_seq_length: 2560
 
 lora:
   r: 16

@@ -43,7 +43,8 @@ def generate_predictions(cfg_name: str = "qlora_extract.yaml") -> list[dict]:
 
     tokenizer = AutoTokenizer.from_pretrained(adapter_path)
     base = AutoModelForCausalLM.from_pretrained(
-        cfg["base_model"], quantization_config=build_bnb_config(cfg["quant"]), device_map="auto",
+        cfg["base_model"], quantization_config=build_bnb_config(cfg["quant"]),
+        torch_dtype=torch.bfloat16, device_map="auto",
     )
     model = PeftModel.from_pretrained(base, adapter_path)
     model.eval()
@@ -59,7 +60,9 @@ def generate_predictions(cfg_name: str = "qlora_extract.yaml") -> list[dict]:
         prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
         with torch.no_grad():
-            out = model.generate(**inputs, max_new_tokens=1024, do_sample=False)
+            # Measured against the labeled dataset: target JSON runs up to 2086 tokens
+            # (docs with large wage tables). 1024 would truncate those mid-JSON.
+            out = model.generate(**inputs, max_new_tokens=3072, do_sample=False)
         text = tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True).strip()
         predictions.append({"doc_id": rec["doc_id"], "target": rec["target"], "prediction_raw": text})
 

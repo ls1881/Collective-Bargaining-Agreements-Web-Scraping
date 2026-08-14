@@ -1,21 +1,12 @@
-# Local-only steps (data_prep.py, distill_labels.py, review_sample.py, eval post-processing):
-# runs fine on the M3 Max, no CUDA/bitsandbytes needed.
-pandas
-numpy
-anthropic
-tqdm
-jiwer
-jsonschema
-
-# GPU-only steps (train_clean_lora.py, train_extract_lora.py, infer_batch.py):
-# install these only on the rented CUDA GPU instance.
-torch>=2.3
-transformers>=4.44
-peft>=0.12
-bitsandbytes>=0.43
-trl>=0.9
-accelerate>=0.33
-datasets
-sentencepiece
-vllm>=0.5
-wandb
+# Split into three files because this pipeline runs across three different environments with
+# incompatible dependency needs (notably: vLLM pins its own torch build that conflicts with the
+# training stack's torch if installed together).
+#
+#   requirements-local.txt   local M3 Max / any CPU machine — data prep, labeling, review
+#   requirements-train.txt   rented GPU instance — QLoRA training (pinned, see file for why)
+#   requirements-infer.txt   rented GPU instance, SEPARATE venv — vLLM batch inference
+#
+# Install the one matching what you're about to run, e.g.:
+#   pip install -r finetune/requirements-local.txt
+#   pip install -r finetune/requirements-train.txt
+#   pip install -r finetune/requirements-infer.txt

@@ -13,7 +13,10 @@ system_prompt: >
   explicitly stated in the text; set null (or empty array) when a field is
   not present. Never guess or infer typical values. Output only valid JSON.
 
-max_seq_length: 3072
+# Measured against the actual labeled dataset with the real Qwen2.5 tokenizer: worst-case
+# formatted example (system+schema+document+target) is 5174 tokens (doc 8520, a 36-row wage
+# table). 3072 would silently truncate that example's target JSON. Set with generous headroom.
+max_seq_length: 6144
 
 lora:
   r: 16

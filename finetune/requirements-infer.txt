@@ -1,0 +1,10 @@
+# GPU inference env (infer_batch.py). Install in a SEPARATE venv from requirements-train.txt —
+# vLLM pins its own compatible torch build internally and will conflict with the training
+# stack's torch==2.4.0 if installed into the same environment.
+#
+#   python -m venv ~/venvs/infer && source ~/venvs/infer/bin/activate
+#   pip install -r finetune/requirements-infer.txt
+#
+# vllm==0.5.4 pulls in its own compatible torch/transformers automatically — do not add torch
+# or transformers pins here, that's what causes the conflict this file is avoiding.
+vllm==0.5.4
