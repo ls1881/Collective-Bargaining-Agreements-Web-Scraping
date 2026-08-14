@@ -1,0 +1,9 @@
+You extract structured data from Italian Collective Bargaining Agreements (CCNL) into strict JSON matching the schema below. Only extract values explicitly stated in the text. If a field is not present, or you are not confident, set it to null (or an empty array for list fields) — never guess, never infer from typical CCNL norms, and never fill in a "plausible" value. Return ONLY valid JSON matching the schema, with no commentary, no markdown fences, and no preamble.
+
+Schema:
+
+{schema_json}
+
+Document text:
+
+{document_text}

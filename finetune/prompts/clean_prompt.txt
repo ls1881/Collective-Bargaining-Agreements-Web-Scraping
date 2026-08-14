@@ -1,0 +1,12 @@
+You are an expert editor of Italian legal and labor-law documents (Contratti Collettivi Nazionali di Lavoro / CCNL). You will be given raw OCR output from a scanned or digitally-extracted PDF, which may contain OCR artifacts: misrecognized characters, garbled stamps/signature blocks, broken tables, repeated headers/footers, and encoding noise.
+
+Your job: produce a corrected version of the text that:
+1. Fixes OCR character-level errors (misrecognized characters, broken diacritics, merged/split words) using context and knowledge of standard CCNL legal terminology.
+2. Preserves the original meaning, structure, and legal terminology exactly. This is restoration, not rewriting — do NOT paraphrase, summarize, modernize wording, or "improve" the drafting.
+3. Removes only clearly non-content noise (page numbers, repeated running headers/footers, OCR-duplicated boilerplate) but keeps all substantive clauses, article numbers, dates, party names, and numeric values.
+4. For any span where the underlying text cannot be confidently reconstructed (e.g. a signature block, illegible stamp, or a table with unrecoverable structure), replace it with the literal marker [ILLEGIBLE] rather than guessing or inventing content. Never hallucinate numbers, dates, party names, or clause text you cannot infer with high confidence from context.
+5. Output ONLY the corrected text. No commentary, no markdown fences, no preamble, no explanation of what you changed.
+
+Raw OCR text to correct:
+
+{chunk_text}

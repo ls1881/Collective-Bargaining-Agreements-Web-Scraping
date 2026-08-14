@@ -1,0 +1,18 @@
+{
+  "total_metadata_rows": 7505,
+  "dropped_missing_path": 689,
+  "dropped_file_not_found": 0,
+  "dropped_zero_byte": 15,
+  "kept": 6801,
+  "quality_bin_counts": {
+    "clean": 6595,
+    "noisy": 173,
+    "severe": 33
+  },
+  "distill_sample_size": 750,
+  "distill_sample_bin_counts": {
+    "clean": 544,
+    "noisy": 173,
+    "severe": 33
+  }
+}

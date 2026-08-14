@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CCNL Extraction Schema",
+  "description": "Structured fields to extract from Italian Collective Bargaining Agreement (CCNL) text bodies. Every field is nullable and none are required: the extractor must emit null rather than guess when a value is not explicitly stated in the source text.",
+  "type": "object",
+  "required": [],
+  "additionalProperties": false,
+  "properties": {
+    "sector": {
+      "type": ["string", "null"],
+      "description": "Industry/sector this CCNL covers, as stated in the document (e.g. 'metalmeccanico', 'commercio')."
+    },
+    "wage_increases": {
+      "type": "array",
+      "description": "Wage increase events explicitly stated in the text. Empty array if none found.",
+      "items": {
+        "type": "object",
+        "required": [],
+        "additionalProperties": false,
+        "properties": {
+          "effective_date": {"type": ["string", "null"], "description": "ISO-8601 date if determinable, else the original date string."},
+          "level_or_category": {"type": ["string", "null"], "description": "Job level/category the increase applies to (e.g. 'livello 3', 'quadri'), if differentiated."},
+          "amount_eur": {"type": ["number", "null"], "description": "Absolute increase amount in EUR, if stated."},
+          "amount_pct": {"type": ["number", "null"], "description": "Percentage increase, if stated."}
+        }
+      }
+    },
+    "weekly_hours": {
+      "type": ["number", "null"],
+      "description": "Standard full-time weekly working hours."
+    },
+    "probation_period_days": {
+      "type": "object",
+      "description": "Probation period length in days, by worker category. Null for categories not covered.",
+      "required": [],
+      "additionalProperties": false,
+      "properties": {
+        "operai": {"type": ["number", "null"]},
+        "impiegati": {"type": ["number", "null"]},
+        "quadri": {"type": ["number", "null"]},
+        "dirigenti": {"type": ["number", "null"]}
+      }
+    },
+    "notice_period_days": {
+      "type": "object",
+      "description": "Notice period (preavviso) length in days, by worker category. Null for categories not covered.",
+      "required": [],
+      "additionalProperties": false,
+      "properties": {
+        "operai": {"type": ["number", "null"]},
+        "impiegati": {"type": ["number", "null"]},
+        "quadri": {"type": ["number", "null"]},
+        "dirigenti": {"type": ["number", "null"]}
+      }
+    },
+    "leave_entitlements": {
+      "type": "object",
+      "description": "Leave provisions explicitly stated in the text.",
+      "required": [],
+      "additionalProperties": false,
+      "properties": {
+        "annual_leave_days": {"type": ["number", "null"], "description": "Annual paid leave (ferie) entitlement in days."},
+        "sick_leave_terms": {"type": ["string", "null"], "description": "Free-text summary of sick leave (malattia) terms, if stated."},
+        "parental_leave_terms": {"type": ["string", "null"], "description": "Free-text summary of parental leave terms, if stated."}
+      }
+    }
+  }
+}
