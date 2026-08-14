@@ -1,0 +1,93 @@
+Italy/
+├── README_ITALY                     # This documentation
+├── Italy CBAs Report Structure.pdf  # Project reporting framework
+├── italy_scraping/                  # Active production environment
+│   ├── Italy_metadata.csv           # Comprehensive contract database (7,500+ records)
+│   ├── italy_scraper.ipynb          # SCRIPT 1: Archive scraping & PDF download
+│   ├── italy_extractor.ipynb        # SCRIPT 2: Text extraction (PDF to TXT)
+│   ├── ocr_utils.py                 # OCR & Document utility functions
+│   ├── italy_translator.ipynb       # SCRIPT 3: Automated Italian-to-English translation
+│   ├── italy_descriptives.ipynb     # SCRIPT 4: Analysis & Visualization
+│   ├── italy_documents/             # Local archive of binary assets (.pdf)
+│   ├── txts/                        # Extracted raw text files
+│   ├── translated_txts/             # Final English-translated documents
+│   ├── italy_plot_signing.png       # Result: "Stipula" trends
+│   ├── italy_plot_effective.png     # Result: "Decorrenza" trends
+│   └── italy_plot_active.png        # Result: Active stock over time
+└── italy_archive/                   # Deprecated versions and prototypes
+
+Data Files (italy_scraping/)
+Italy_metadata.csv:
+The core database containing the lifecycle of over 7,500 agreements.
+
+Linking Metadata to Files and Assigning Document Dates
+
+Each row in Italy_metadata.csv represents a single, unique collective bargaining agreement renewal or legal supplement. Every entry is tracked by an agreement ID (id accordo) and an industry classification code (CCNL CNEL idfk). Source binaries and extracted text assets align directly as follows:
+
+Metadata Field: The local_txt_path column contains the exact path, structured as txts/Agreement_Name (CCNL_CODE).txt.
+
+Raw Text (OCR/Plumber): Located at italy_scraping/txts/[Document_Title] ([CCNL_CODE]).txt.
+
+English Translation: Located at italy_scraping/translated_txts/[Document_Title] ([CCNL_CODE]).txt.
+
+Source Binary: Located at italy_scraping/italy_documents/[Document_Title] ([CCNL_CODE]).[pdf/doc/rtf].
+
+Determining Validity Dates for Each Document
+Because every individual document has its own row, assigning precise timeline dates does not require decoding filename fragments. Temporal lifecycle data is pulled directly from the metadata fields of that specific record:
+
+Signature Date: The formal signing date of that specific document is found under the Stipula column.
+
+Effective Date: The date the terms in that document officially begin to apply is found under the Decorrenza column.
+
+Expiry Date: The date that specific agreement version ceases to be valid is found under the Scadenza Contrattuale column.
+
+To track the chronological evolution of an industry's collective bargaining agreements over different years, filter the metadata file by the target CCNL CNEL idfk industry code and sort the resulting rows by their Decorrenza (Effective) dates.
+
+CCNL CNEL idfk: Unique alphanumeric identifier for the agreement type.
+id accordo: Unique internal ID for the specific document/renewal.
+
+Stipula: The date the agreement was formally signed.
+Decorrenza: The date the terms take effect (often retroactive).
+Scadenza Contrattuale: The formal expiry date of the contract.
+Data Deposito: The date the document was officially filed with the CNEL.
+
+Scripts & Replication Workflow
+1. Archive Scraping (italy_scraper.ipynb)
+This script navigates the CNEL digital archive using SeleniumBase.
+
+Technique: Iterates through the paginated archive to collect metadata and download PDFs. It utilizes a DOWNLOAD_EXECUTOR to handle file acquisition in parallel. Uses Selenium to type it out and mirror human activity. Using headless mode or speeding it up results
+in a temporary IP ban, so using this slower but more consistent method is unfortunately necessary to get around their anti-bot 
+banning.
+
+Resilience: Implements a check against existing files to prevent redundant downloads and handles "ghost tabs" to trigger downloads via native browser events.
+
+2. Text Extraction (italy_extractor.ipynb & ocr_utils.py)
+Because many Italian contracts are older scanned images, a standard text pull is often insufficient.
+
+Logic: Uses pdfplumber for digital PDFs. If OCR is necessary, it triggers an OCR routine via pytesseract and pdf2image.
+
+Formatting: Handles .pdf, .docx, .rtf, and legacy .doc files, converting them all into standardized .txt files in the txts/ folder.
+Almost every document in Italy database are of .pdf, .doc, or .rtf format.
+
+3. Automated Translation (italy_translator.ipynb)
+Translates the Italian legal text into English using the googletrans API.
+
+Cleaning: Features a clean_text function to remove "toxic" characters and repetitive formatting (like long strings of dots in Table of Contents) that often crash translation APIs.
+
+Chunking: Breaks long legal documents into 2,000-character chunks to stay within API limits while maintaining context.
+
+4. Descriptive Analysis (italy_descriptives.ipynb)
+Final statistical stage for visualization generation.
+
+Active Agreement Logic: Implements the Overlap Logic. An agreement is counted for any year where its duration (date_effective to date_expiry) overlaps with the calendar year by at least one day.
+
+Exclusion: Explicitly filters out 2026 data.
+
+Software Requirements
+Python 3.12
+
+OCR Engine: Requires Tesseract OCR installed on the system path.
+
+Core Packages: pandas, seleniumbase, matplotlib, pdfplumber, pytesseract, googletrans, python-docx.
+
+Infrastructure: Optimized for macOS (uses textutil for legacy .doc conversion).
