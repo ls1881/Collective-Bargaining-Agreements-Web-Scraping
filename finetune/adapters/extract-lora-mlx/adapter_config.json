@@ -1,0 +1,9 @@
+{
+    "fine_tune_type": "lora",
+    "lora_parameters": {
+        "rank": 16,
+        "dropout": 0.05,
+        "scale": 20.0
+    },
+    "num_layers": 16
+}
