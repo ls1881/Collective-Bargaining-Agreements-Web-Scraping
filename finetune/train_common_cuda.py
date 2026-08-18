@@ -99,7 +99,10 @@ def load_base_model_and_tokenizer(base_model: str, quant_cfg: dict):
         # otherwise, using meaningfully more VRAM than needed on a 24GB card for no benefit.
         device_map="auto",
     )
-    model = prepare_model_for_kbit_training(model)
+    # Match the use_reentrant=False set later in TrainingArguments (run_training) so both
+    # calls that touch gradient-checkpointing config agree from the start, instead of relying
+    # on the later Trainer-side call to silently override this one.
+    model = prepare_model_for_kbit_training(model, gradient_checkpointing_kwargs={"use_reentrant": False})
     return model, tokenizer
 
 
@@ -144,6 +147,10 @@ def run_training(config_name: str, train_ds: Dataset, val_ds: Dataset, model, to
         warmup_ratio=train_cfg["warmup_ratio"],
         num_train_epochs=train_cfg["num_train_epochs"],
         bf16=train_cfg["bf16"],
+        # Standard QLoRA optimizer: 8-bit paged AdamW via bitsandbytes. Lower optimizer-state
+        # memory than the fp32 default, and "paged" avoids memory-spike OOMs during gradient
+        # checkpointing's activation recomputation. Costs nothing — same speed, less VRAM.
+        optim="paged_adamw_8bit",
         gradient_checkpointing=train_cfg["gradient_checkpointing"],
         # Common QLoRA + gradient-checkpointing gotcha: with the reentrant checkpointing
         # implementation (the default in some torch/transformers version combos), a
@@ -162,6 +169,8 @@ def run_training(config_name: str, train_ds: Dataset, val_ds: Dataset, model, to
         report_to=["wandb"] if os.environ.get("WANDB_API_KEY") else [],
     )
 
+    from transformers import EarlyStoppingCallback
+
     trainer = SFTTrainer(
         model=model,
         args=args,
@@ -171,6 +180,15 @@ def run_training(config_name: str, train_ds: Dataset, val_ds: Dataset, model, to
         data_collator=collator,
         max_seq_length=cfg["max_seq_length"],
         tokenizer=tokenizer,
+        # NEFTune: adds noise to embeddings during training only. Documented to improve SFT
+        # quality specifically on small instruction datasets like this one, at zero extra
+        # training cost (same steps, same speed). alpha=5 is the paper/TRL-recommended default.
+        neftune_noise_alpha=5,
+        # On a 15-epoch run over ~90 examples, the model will very plausibly converge or start
+        # overfitting well before epoch 15 — stopping early saves real GPU time instead of
+        # grinding through remaining epochs on a dataset this small. Patience=10 evals (with
+        # eval_steps=5, that's 50 steps ~ a few epochs) before giving up on improvement.
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=10)],
     )
 
     from transformers.trainer_utils import get_last_checkpoint

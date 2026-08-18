@@ -4,10 +4,10 @@ GPU-required (vLLM). Run on the rented instance after both adapters are trained
 and pass their eval gates (§5 of the plan).
 
 Usage:
-  python finetune/infer_batch.py --stage clean
-  python finetune/infer_batch.py --stage translate
-  python finetune/infer_batch.py --stage extract
-  python finetune/infer_batch.py --stage all
+  python finetune/infer_batch_cuda.py --stage clean
+  python finetune/infer_batch_cuda.py --stage translate
+  python finetune/infer_batch_cuda.py --stage extract
+  python finetune/infer_batch_cuda.py --stage all
 """
 import argparse
 import csv
@@ -69,7 +69,7 @@ def build_vllm(base_model: str, adapter_path: str, max_model_len: int):
     from vllm.lora.request import LoRARequest
 
     # Loads the base model in bf16 (~14GB weights for 7B), NOT 4-bit — vLLM's bitsandbytes
-    # serving path is immature/version-fragile at the pinned vllm==0.5.4, so bf16 is the safer
+    # serving path is immature/version-fragile at the pinned vllm==0.5.1, so bf16 is the safer
     # choice here even though training used 4-bit. This needs a real 24GB-class GPU (matches
     # the plan's assumption); a 16GB card will not fit weights + KV cache.
     llm = LLM(model=base_model, dtype="bfloat16", enable_lora=True, max_lora_rank=32,
@@ -80,11 +80,16 @@ def build_vllm(base_model: str, adapter_path: str, max_model_len: int):
 
 def stage_clean(scope: str = "noisy-severe"):
     """scope='noisy-severe' (default): only run the model on docs flagged noisy/severe by
-    data_prep.py's quality heuristic (~206 docs, ~10.6K chunks) and copy the other ~6,595
-    already-clean docs through unchanged. scope='all' runs the model on every doc (~526K
-    chunks, tens of GPU-hours) — only use that if you specifically need the model's output
-    on already-clean text too (e.g. to validate it doesn't over-edit)."""
-    from train_common import load_config
+    data_prep.py's quality heuristic (~206 docs), and within those docs, only on the
+    individual CHUNKS that are themselves chunk-level noisy/severe (matching exactly how
+    chat_sample.py sampled the training data — most chunks inside a "noisy" doc are locally
+    clean, the doc-level average just crossed the threshold). Chunk-level-clean chunks and
+    the other ~6,595 doc-level-clean docs are copied through unchanged, no GPU cost.
+    scope='all' runs the model on every doc/chunk regardless (~526K chunks, tens of
+    GPU-hours) — only use that if you specifically need the model's output on already-clean
+    text too (e.g. to validate it doesn't over-edit)."""
+    from data_prep import ocr_quality
+    from train_common_cuda import load_config
     from vllm import SamplingParams
 
     cfg = load_config(CLEAN_CFG_NAME)
@@ -100,8 +105,9 @@ def stage_clean(scope: str = "noisy-severe"):
     os.makedirs(CLEANED_TXT_DIR, exist_ok=True)
     corpus = load_corpus_index()
 
-    pending_docs = []  # (doc_id, out_path, [chunk_records])
-    passthrough_count = 0
+    pending_docs = []  # (doc_id, out_path, {chunk_id: text}, [chunk_recs needing the model])
+    passthrough_doc_count = 0
+    passthrough_chunk_count = 0
     for row in corpus:
         out_path = os.path.join(CLEANED_TXT_DIR, os.path.basename(row["txt_path"]))
         if os.path.exists(out_path):
@@ -111,15 +117,33 @@ def stage_clean(scope: str = "noisy-severe"):
             # Already clean by heuristic — copy through without spending GPU time on it.
             text = open(row["txt_path"], encoding="utf-8", errors="replace").read()
             write_text_atomic(out_path, text)
-            passthrough_count += 1
+            passthrough_doc_count += 1
             continue
 
         text = open(row["txt_path"], encoding="utf-8", errors="replace").read()
-        pending_docs.append((row["id_accordo"], out_path, chunk_document(row["id_accordo"], text)))
+        all_recs = chunk_document(row["id_accordo"], text)
 
-    total_chunks = sum(len(d[2]) for d in pending_docs)
-    print(f"[clean] {passthrough_count} docs passed through unchanged (already clean by heuristic)")
-    print(f"[clean] {total_chunks} chunks across {len(pending_docs)} docs to process, "
+        base_chunks = {}  # chunk_id -> passthrough text (filled in now, overwritten by model output later)
+        needs_model = []
+        for rec in all_recs:
+            if scope == "all" or ocr_quality(rec["text"])["bin"] in ("noisy", "severe"):
+                needs_model.append(rec)
+            else:
+                base_chunks[rec["chunk_id"]] = rec["text"]
+                passthrough_chunk_count += 1
+
+        if not needs_model:
+            # Every chunk in this doc turned out to be chunk-level clean — write it through now.
+            write_text_atomic(out_path, reassemble([base_chunks[cid] for cid in sorted(base_chunks)]))
+            continue
+
+        pending_docs.append((row["id_accordo"], out_path, base_chunks, needs_model))
+
+    total_chunks = sum(len(d[3]) for d in pending_docs)
+    print(f"[clean] {passthrough_doc_count} docs passed through unchanged (doc-level clean)")
+    print(f"[clean] {passthrough_chunk_count} additional chunks passed through unchanged "
+          f"(chunk-level clean within a doc-level noisy/severe doc)")
+    print(f"[clean] {total_chunks} chunks across {len(pending_docs)} docs actually need the model, "
           f"in batches of {CLEAN_BATCH_DOCS} docs (a crash/interruption loses at most one batch)")
 
     if not pending_docs:
@@ -131,7 +155,7 @@ def stage_clean(scope: str = "noisy-severe"):
     for batch_num, doc_batch in enumerate(batched(pending_docs, CLEAN_BATCH_DOCS), 1):
         prompt_index = []  # (doc_id, out_path, chunk_id)
         prompts = []
-        for doc_id, out_path, chunk_recs in doc_batch:
+        for doc_id, out_path, _base_chunks, chunk_recs in doc_batch:
             for rec in chunk_recs:
                 messages = [
                     {"role": "system", "content": cfg["system_prompt"]},
@@ -142,10 +166,10 @@ def stage_clean(scope: str = "noisy-severe"):
 
         outputs = llm.generate(prompts, sampling_params, lora_request=lora_request)
 
-        by_doc = {}
+        by_doc = {(doc_id, out_path): dict(base_chunks) for doc_id, out_path, base_chunks, _ in doc_batch}
         for (doc_id, out_path, chunk_id), output in zip(prompt_index, outputs):
             cleaned = output.outputs[0].text.strip()
-            by_doc.setdefault((doc_id, out_path), {})[chunk_id] = cleaned
+            by_doc[(doc_id, out_path)][chunk_id] = cleaned
 
         for (doc_id, out_path), chunks in by_doc.items():
             text = reassemble([chunks[cid] for cid in sorted(chunks)])
@@ -200,8 +224,8 @@ def stage_translate():
 
 
 def stage_extract():
-    from train_common import load_config
-    from train_extract_lora import load_schema
+    from train_common_cuda import load_config
+    from train_extract_lora_cuda import load_schema
     from vllm import SamplingParams
 
     cfg = load_config(EXTRACT_CFG_NAME)
@@ -251,6 +275,15 @@ def stage_extract():
     print(f"[extract] {len(already_done)} docs already done (resumed), {len(pending)} to extract, "
           f"in batches of {EXTRACT_BATCH_DOCS} docs")
 
+    if not pending and not already_done:
+        # Nothing was ever extracted AND nothing is ready to extract — almost certainly means
+        # stage_clean() hasn't populated CLEANED_TXT_DIR yet (e.g. `--stage extract` run
+        # standalone before `--stage clean`), not an actual resume. EXTRACT_PREDICTIONS_JSONL
+        # was never created in this case, so there's nothing to parse below either — bail here
+        # instead of crashing on open() for a file that doesn't exist.
+        print(f"[extract] nothing to do — no files found in {CLEANED_TXT_DIR}. "
+              f"Run --stage clean first.")
+        return
     if not pending:
         print("[extract] nothing left to process (resume case).")
     else:
@@ -360,11 +393,15 @@ def main():
     )
     parser.add_argument(
         "--clean-scope", choices=["noisy-severe", "all"], default="noisy-severe",
-        help="'noisy-severe' (default, recommended): only run the model on the ~206 docs "
-             "flagged noisy/severe by data_prep.py (~10.6K chunks, ~1-3 GPU-hours); the other "
-             "~6,595 already-clean docs are copied through unchanged, no GPU cost. "
-             "'all': run the model on every doc (~526K chunks, tens of GPU-hours) — expensive, "
-             "only use this if you specifically need the model's output on already-clean text too.",
+        help="'noisy-severe' (default, recommended): only look inside the ~206 docs flagged "
+             "noisy/severe by data_prep.py, and within those, only run the model on the "
+             "individual chunks that are themselves chunk-level noisy/severe — most chunks in "
+             "a 'noisy' doc turn out to be locally clean once checked individually. Everything "
+             "else (the other ~6,595 doc-level-clean docs, plus locally-clean chunks within "
+             "noisy docs) is copied through unchanged, no GPU cost. "
+             "'all': run the model on every doc/chunk regardless (~526K chunks, tens of "
+             "GPU-hours) — expensive, only use this to validate the model doesn't over-edit "
+             "already-clean text.",
     )
     args = parser.parse_args()
 

@@ -1,0 +1,12 @@
+# Apple Silicon (MLX) training + inference env — runs locally on the M3 Max, no cloud GPU.
+# Install: pip install -r finetune/requirements-mlx.txt
+#
+# These exact versions were actually installed and smoke-tested end-to-end on real hardware
+# (not just dependency-resolution-checked like the CUDA pins) — train_common_mlx.py's
+# run_training() ran for real, produced a real loss, and the early-stopping/best-checkpoint
+# callback fired correctly. Safe to trust these.
+mlx==0.32.0
+mlx-lm==0.31.3
+pyyaml==6.0.3
+jiwer
+jsonschema

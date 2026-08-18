@@ -1,0 +1,46 @@
+# MLX (Apple Silicon) equivalent of qlora_clean.yaml — runs locally on the M3 Max, no cloud
+# GPU. Uses a pre-quantized MLX-native model (4-bit) rather than bitsandbytes-quantizing a
+# bf16 model ourselves like the CUDA path does; mlx-community maintains these conversions.
+base_model: mlx-community/Qwen2.5-7B-Instruct-4bit
+adapter_out: adapters/clean-lora-mlx
+labels_path: data/clean_labels.jsonl
+
+system_prompt: >
+  You are an expert editor of Italian legal and labor-law documents (CCNL).
+  Correct OCR errors, preserve meaning and legal terminology exactly, and
+  mark unrecoverable spans as [ILLEGIBLE]. Output only the corrected text.
+
+# Same measured value as qlora_clean.yaml (2186 tokens worst case + headroom) — the tokenizer
+# is the same one regardless of backend, so the same budget applies.
+max_seq_length: 2560
+
+lora:
+  rank: 16       # same rank as the CUDA config (16), for comparable capacity
+  dropout: 0.05
+  scale: 20.0    # mlx-lm's own convention/default for the scale factor (not alpha/rank — see
+                 # train_common_mlx.py's LoRALinear notes); not directly comparable to the
+                 # CUDA config's alpha=32, different frameworks scale LoRA updates differently.
+  num_layers: 16 # mlx-lm's default: LoRA-adapt only the last N transformer blocks (of 28
+                 # total in Qwen2.5-7B), not peft's "every layer" approach — a reasonable,
+                 # library-recommended middle ground for a dataset this small.
+
+train:
+  batch_size: 2
+  num_epochs: 15               # converted to an iters count at runtime based on actual train-set size
+  # mlx-lm's own CONFIG_DEFAULTS uses 1e-5 paired with scale=20.0 (see lora.scale above) — the
+  # real training run diverged to NaN loss by iter 43 using 2e-4 (copied blindly from the CUDA
+  # config, which uses a different alpha/rank scaling convention where 2e-4 is normal). Matching
+  # the library's own tested default instead of guessing.
+  learning_rate: 1.0e-5
+  steps_per_report: 1
+  steps_per_eval: 5
+  grad_checkpoint: true
+  grad_accumulation_steps: 2
+  early_stopping_patience: 10  # same as the CUDA config
+
+split:
+  val_fraction: 0.10
+  test_fraction: 0.10
+  split_key: doc_id
+  stratify_key: quality_bin
+  seed: 42

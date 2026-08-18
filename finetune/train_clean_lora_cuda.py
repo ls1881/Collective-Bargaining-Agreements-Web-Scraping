@@ -3,12 +3,12 @@
 GPU-required (bitsandbytes/CUDA rented instance). Run after distill_labels.py
 and after review_sample.py has cleared the hallucination-rate gate.
 
-Usage: python finetune/train_clean_lora.py
+Usage: python finetune/train_clean_lora_cuda.py
 """
 import json
 import os
 
-from train_common import (
+from train_common_cuda import (
     doc_level_split,
     load_base_model_and_tokenizer,
     load_config,

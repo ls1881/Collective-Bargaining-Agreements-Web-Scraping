@@ -1,12 +1,16 @@
-# Split into three files because this pipeline runs across three different environments with
-# incompatible dependency needs (notably: vLLM pins its own torch build that conflicts with the
-# training stack's torch if installed together).
+# Two backends are available for training/inference — pick one:
 #
-#   requirements-local.txt   local M3 Max / any CPU machine — data prep, labeling, review
-#   requirements-train.txt   rented GPU instance — QLoRA training (pinned, see file for why)
-#   requirements-infer.txt   rented GPU instance, SEPARATE venv — vLLM batch inference
+#   CUDA (cloud GPU rental — AWS, RunPod, etc.), files suffixed *_cuda.py:
+#     requirements-local.txt        local M3 Max / any CPU machine — data prep, labeling, review
+#     requirements-train-cuda.txt   rented GPU instance — QLoRA training (pinned, see file for why)
+#     requirements-infer-cuda.txt   rented GPU instance, SEPARATE venv — vLLM batch inference
 #
-# Install the one matching what you're about to run, e.g.:
-#   pip install -r finetune/requirements-local.txt
-#   pip install -r finetune/requirements-train.txt
-#   pip install -r finetune/requirements-infer.txt
+#   MLX (Apple Silicon, runs locally, no cloud/GPU rental needed), files suffixed *_mlx.py:
+#     requirements-mlx.txt          local Mac — training AND inference (one env, no CUDA needed)
+#
+# Both backends read/write the same data files (finetune/data/*.jsonl, schema.json, prompts/)
+# and produce adapters that do the same job — pick whichever compute you actually have access
+# to. Install the file matching what you're about to run, e.g.:
+#   pip install -r finetune/requirements-local.txt      # always, for data prep/labeling
+#   pip install -r finetune/requirements-train-cuda.txt  # OR
+#   pip install -r finetune/requirements-mlx.txt
