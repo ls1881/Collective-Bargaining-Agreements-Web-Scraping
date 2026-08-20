@@ -1,0 +1,84 @@
+Finland/
+├── README_FINLAND                   # This documentation
+├── Finland CBAs Report Structure.pdf # Project reporting framework
+├── finland_scraping/                # Active production environment
+│   ├── finland_metadata.csv         # Comprehensive metadata (200+ industries)
+│   ├── finland_scraper.ipynb        # SCRIPT 1: A-Z index crawler & PDF downloader
+│   ├── finland_extractor.ipynb      # SCRIPT 2: OCR & Text extraction (Finnish)
+│   ├── finland_translator.ipynb     # SCRIPT 3: Automated Finnish-to-English translation
+│   ├── finland_descriptives.ipynb   # SCRIPT 4: Analysis & Visualization
+│   ├── finland_pdfs/                # Local archive of binary assets (.pdf)
+│   ├── txts/                        # Extracted raw Finnish text files
+│   ├── translated_txts/             # Final English-translated documents
+│   ├── finland_plot_signing.png     # Result: Signing trends
+│   ├── finland_plot_effective.png   # Result: Entry into force trends
+│   └── finland_plot_active.png      # Result: Active stock over time
+└── finland_archive/                 # Prototypes and prototype PDFs
+
+Data Files (finland_scraping/)
+finland_metadata.csv
+The master file capturing the legal status of Finnish labor contracts.
+
+Linking Metadata to Files and Assigning Document Dates
+
+Each row in `finland_metadata.csv` matches text and PDF assets via the columns `PDF_1` through `PDF_7`. These columns list separate documents belonging to the same long-term agreement sequence across different renewal years.
+
+Binary PDFs and extracted text files share identical base names, differing only by directory and file extension:
+Source Binary: `finland_pdfs/[Filename].pdf`
+Raw Text (OCR): `txts/[Filename].txt`
+English Translation:`translated_txts/[Filename].txt`
+
+Determining Dates for Multi-Year PDFs
+Because a single row contains multiple historical versions of an agreement, individual document dates are assigned chronologically using filename tokens:
+The Filename Year Token:Filenames follow a `[Name][YY][MM].pdf` convention. For example, `Apteek2505.pdf` indicates an asset from May 2025, while `Apteek2305.pdf` indicates May 2023.
+The Latest Document: The file featuring the highest year token matches the row's official `Date of entry into force...` and `Expiry date...` values.
+
+Year: The year of the official registry entry.
+Date of Issue: The date the Committee for Confirming General Applicability issued its decision.
+Date of signature of collective agreement: The date the actual labor contract was signed.
+Date of entry into force...: When the agreement began to apply.
+Expiry date...: When the current coverage cycle ends.
+
+General applicability: Legal status (e.g., allmänt bindande - generally binding).
+
+Note: There are only ~200 rows of metadata because Finland has sector-level agreements. Most
+of these agreements have multiple pdfs corresponding to different versions of the agreement.
+
+Scripts & Replication Workflow
+1. A-Z Index Crawler (finland_scraper.ipynb)
+This script harvests data from the Finlex authorities' database.
+
+Technique: Scans the alphabetical index (A-Z) of collective agreements. It uses Selenium to handle paginated results (scanning multiple pages per letter) to harvest all Source_URL entries.
+
+
+2. Finnish Text Extraction (finland_extractor.ipynb)
+A specialized extraction tool designed for Finnish characters.
+
+Logic: Converts PDF pages to high-resolution (300 DPI) images using pdf2image.
+
+OCR Implementation: Uses pytesseract with the lang='fin' model. This is critical for capturing Finnish-specific characters (ä, ö) and specialized legal vocabulary accurately.
+
+Output: Generates standardized .txt files for every agreement in the archive.
+
+3. Automated Translation (finland_translator.ipynb)
+Handles the conversion of raw Finnish text into English research materials.
+
+Logic: Uses the googletrans API. It includes a specific clean_text function to strip "toxic" symbols (like strings of 'o' or '.' used in Finnish tables of contents (side effect of OCR)) that commonly cause API errors.
+
+Resilience: Implements a 2-second "human delay" between chunks and manages long files by splitting them into 2,000-character segments.
+
+4. Descriptive Analysis (finland_descriptives.ipynb)
+Generates visualizations.
+
+Date Handling: Uses a strict Finnish dot-notation parser (%d.%m.%Y). Handles the specific "Date of Issue" vs. "Date of Signature" logic explored in the report.
+
+Active Agreement Logic: Employs Overlap Logic. An agreement is counted as active for a year if its implementation period (date_effective to date_expiry) overlaps with that calendar year for at least one day.
+
+Exclusion: Explicitly filters out 2026 data.
+
+Software Requirements
+Python 3.12
+
+System Dependencies: Requires Tesseract OCR (with Finnish language pack) and Poppler (for PDF-to-image conversion).
+
+Core Packages: pandas, selenium, matplotlib, pytesseract, pdf2image, googletrans.

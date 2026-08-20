@@ -2,7 +2,8 @@
 
 Fine-tuned pipeline for cleaning OCR/translation noise and extracting structured fields from
 Italian Collective Bargaining Agreements (CCNLs). Built on top of the scraping pipeline in
-[`../italy_scraping`](../italy_scraping) (see [`../README_Italy`](../README_Italy)), which
+[`../scraping/italy_scraping`](../scraping/italy_scraping) (see
+[`../scraping/italy_scraping/README_Italy`](../scraping/italy_scraping/README_Italy)), which
 produces the raw scraped text this pipeline consumes.
 
 ## Why this exists
@@ -141,6 +142,53 @@ python infer_batch_mlx.py --stage translate          # re-translate cleaned text
 `output/` (~424MB total) is **not committed to this repo** — it's fully regenerable from the
 adapters via the three commands above, run against a local copy of the scraped corpus. See
 [`../README_Italy`](../README_Italy) for where the raw scraped text it depends on lives.
+
+## Finland: does the Italian adapter generalize?
+
+Before committing to a full Finland-specific retrain (hand-labeling Finnish/Swedish examples,
+same as Italian), `eval_finland_mlx.py` tested whether the already-trained clean-lora-mlx /
+extract-lora-mlx adapters — trained purely on Italian text, unmodified — transfer to Finnish
+CBAs at all, by comparing their output against the plain zero-shot base model on 8 sampled
+documents. Finland's corpus is bilingual: many CBAs have an official Swedish-language
+translation alongside the Finnish original (the `StmRuotsi` filename suffix).
+
+**Result: mixed-to-negative for the adapter, and zero-shot alone was already strong.**
+
+- **Cleaning**: in the 2 sampled chunks with obvious OCR noise, zero-shot correctly identified
+  and removed it both times (spurious inserted dashes; a block of pure OCR symbol-garbage); the
+  adapter left both untouched, and in one other case introduced a new error not present in the
+  source (`työhön palaamisestaan` → `työnpalautuksestaan`).
+- **Extraction — sector field**: adapter wins clearly, correctly extracting it in 8/8 docs vs.
+  zero-shot's 4/8 (zero-shot returned `null` when the sector was readable straight off the
+  title).
+- **Extraction — wage increases**: adapter loses badly, 0/2 on the docs that had real wage
+  clauses in view. Zero-shot correctly extracted precise dates and percentages both times,
+  including a 3-entry sequence (2.5%, 2.9%, 2.4% across three years) with exact effective dates
+  — the adapter returned an empty array for the same input both times.
+
+The likely explanation: the adapter learned Italian-specific conservatism (when uncertain,
+change little) and Italian-specific numeric/date phrasing patterns, neither of which transfer.
+Unlike Italian's original zero-shot baseline (16.7% JSON parse failure, heavy hallucination),
+Qwen2.5's zero-shot performance on Finnish/Swedish was already competent on its own — this
+isn't a "broken baseline" situation. Full comparison data:
+[`data/finland_clean_sample_compare.json`](data/finland_clean_sample_compare.json),
+[`data/finland_extract_sample_compare.json`](data/finland_extract_sample_compare.json).
+
+**Decision**: given the smaller corpus (499 docs vs. Italy's 6,801), the mixed adapter result,
+and the added risk of a from-scratch Finnish/Swedish label set (lower hand-labeling confidence
+than Italian was already flagged as a real quality risk before testing), a full retrain wasn't
+judged worth it. `infer_finland_mlx.py` instead runs **zero-shot extraction only** — the
+genuinely new capability for Finland, since the original scraping pipeline never extracted any
+structured fields — directly against the raw scraped text, skipping cleaning entirely (Finland
+already has its own English translation of the raw text from the original pipeline, so nothing
+is lost by not re-cleaning first). Unfiltered cleaning would have been 42,606 chunks (more than
+Italy's filtered clean stage needed); two OCR-noise heuristics were tested as a cost-reduction
+filter and neither reliably separated real noise from clean text on this corpus, so rather than
+ship an unvalidated filter, cleaning was scoped out rather than run wastefully or incorrectly.
+
+Result: **211/211 rows processed, 210 valid JSON (99.5%)**, merged into
+`output/finland_metadata_extended.csv`. 116/211 rows got a non-null sector, 46/211 got
+extracted wage-increase data.
 
 ## Repository layout
 

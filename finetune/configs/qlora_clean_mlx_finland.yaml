@@ -1,0 +1,40 @@
+# Out-of-distribution test: reuses the clean-lora-mlx adapter trained on Italian CCNL text,
+# unmodified, against Finnish CBA text — no retraining. Only the system prompt changes (to
+# accurately describe the input as Finnish rather than Italian, so the base model can bring its
+# own Finnish-language knowledge to bear; the adapter's learned "clean OCR / preserve legal
+# terminology / mark unrecoverable spans" skill is what's being tested for transfer, not whether
+# it can parse a mismatched country reference). See finetune/README.md for how this compares to
+# a full Finland-specific retrain, and the result of this test.
+base_model: mlx-community/Qwen2.5-7B-Instruct-4bit
+adapter_out: adapters/clean-lora-mlx   # reused as-is, not retrained
+labels_path: data/clean_labels.jsonl   # unused at inference time; kept for interface parity
+
+system_prompt: >
+  You are an expert editor of Finnish legal and labor-law documents (collective bargaining
+  agreements). Correct OCR errors, preserve meaning and legal terminology exactly, and
+  mark unrecoverable spans as [ILLEGIBLE]. Output only the corrected text.
+
+max_seq_length: 2560
+
+lora:
+  rank: 16
+  dropout: 0.05
+  scale: 20.0
+  num_layers: 16
+
+train:
+  batch_size: 2
+  num_epochs: 15
+  learning_rate: 1.0e-5
+  steps_per_report: 1
+  steps_per_eval: 5
+  grad_checkpoint: true
+  grad_accumulation_steps: 2
+  early_stopping_patience: 10
+
+split:
+  val_fraction: 0.10
+  test_fraction: 0.10
+  split_key: doc_id
+  stratify_key: quality_bin
+  seed: 42

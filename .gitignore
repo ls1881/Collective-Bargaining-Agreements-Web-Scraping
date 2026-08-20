@@ -1,6 +1,17 @@
 # Full-corpus pipeline outputs — large (400MB+), regenerable from finetune/adapters/ + the
-# commands in finetune/README.md. Kept local-only rather than committed.
-finetune/output/
+# commands in finetune/README.md. Kept local-only rather than committed. Exception: Finland's
+# extended metadata CSV is small (~120KB, 211 rows) and is the actual deliverable, so it's kept.
+# (output/* rather than output/ so git still traverses the directory to apply the negation.)
+finetune/output/*
+!finetune/output/finland_metadata_extended.csv
+
+# Finland scraping — raw/OCR'd/translated document assets and deprecated prototype work
+# (~545MB combined). Regenerable from scraping/finland_scraping/finland_metadata.csv +
+# finland_scraper.ipynb/finland_extractor.ipynb/finland_translator.ipynb. Kept local-only.
+scraping/finland_scraping/finland_pdfs/
+scraping/finland_scraping/finland_txts/
+scraping/finland_scraping/finland_translated_txts/
+scraping/finland_archive/
 
 # Python
 __pycache__/

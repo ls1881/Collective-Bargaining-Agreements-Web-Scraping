@@ -1,0 +1,38 @@
+# Out-of-distribution test: reuses the extract-lora-mlx adapter trained on Italian CCNL text,
+# unmodified, against Finnish CBA text — no retraining. See qlora_clean_mlx_finland.yaml and
+# finetune/README.md for the rationale and result.
+base_model: mlx-community/Qwen2.5-7B-Instruct-4bit
+adapter_out: adapters/extract-lora-mlx   # reused as-is, not retrained
+labels_path: data/extract_labels.jsonl   # unused at inference time; kept for interface parity
+schema_path: schema.json                  # same language-agnostic field schema as Italy
+
+system_prompt: >
+  You extract structured data from Finnish Collective Bargaining Agreements into strict
+  JSON matching the given schema. Only extract values explicitly stated in the text; set
+  null (or empty array) when a field is not present. Never guess or infer typical values.
+  Output only valid JSON.
+
+max_seq_length: 6144
+
+lora:
+  rank: 16
+  dropout: 0.05
+  scale: 20.0
+  num_layers: 16
+
+train:
+  batch_size: 2
+  num_epochs: 15
+  learning_rate: 1.0e-5
+  steps_per_report: 1
+  steps_per_eval: 5
+  grad_checkpoint: true
+  grad_accumulation_steps: 2
+  early_stopping_patience: 10
+
+split:
+  val_fraction: 0.10
+  test_fraction: 0.10
+  split_key: doc_id
+  stratify_key: null
+  seed: 42
