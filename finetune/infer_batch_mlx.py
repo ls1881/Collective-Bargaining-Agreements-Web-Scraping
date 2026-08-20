@@ -179,14 +179,20 @@ def stage_translate():
     for interface parity; run either version, they do the same thing.
 
     Uses hard-slice chunking (matching italy_translator.ipynb's proven `content[i:i+MAX_CHARS]`
-    approach) rather than chunking.py's paragraph/sentence-boundary-aware chunk_document() —
-    measured ~12% fewer chunks over the full cleaned corpus (124,675 -> 111,439), since
-    boundary-aware splitting backs off early to avoid cutting mid-sentence and so produces more,
-    smaller chunks. That distinction matters for training data quality but not for translation
-    (Google's own sentence-level model doesn't care about a mid-sentence chunk boundary), so
-    there's no quality cost to the faster approach here. Sleep interval (1s/chunk) is left
-    untouched — that's the notebook's own tuned rate-limit floor for the unofficial API; going
-    below it risks getting the whole stage blocked, which would be worse than being slow."""
+    approach) rather than chunking.py's paragraph/sentence-boundary-aware chunk_document(), and
+    a much larger MAX_CHARS (8000, up from the notebook's 2000). Measured empirically: request
+    latency to the unofficial googletrans endpoint is roughly constant (~1-1.5s) regardless of
+    payload size up to ~14,200-14,400 chars, where it silently starts FAILING — returning the
+    original untranslated text with no exception raised (confirmed byte-for-byte identical
+    output). That threshold isn't a fixed constant either: it varied by document in testing, so
+    8000 was chosen with real margin below the observed failure zone on multiple real corpus
+    documents, cutting total chunk count ~4x (111,439 -> ~28,000) versus the 2000-char baseline.
+    _translate_with_fallback() below detects the silent-failure signature (output == input) on
+    every call regardless of chunk size and recursively retries with the chunk split in half, as
+    a safety net against document-dependent variance in where that ceiling actually falls.
+    Sleep interval (1s/call) is left untouched — that's the notebook's own tuned rate-limit floor
+    for the unofficial API; going below it risks getting the whole stage blocked, which would be
+    worse than being slow."""
     import time
 
     from googletrans import Translator
@@ -194,33 +200,43 @@ def stage_translate():
     os.makedirs(CLEANED_TRANSLATED_DIR, exist_ok=True)
     translator = Translator()
 
-    def hard_slice_chunks(text, max_chars=2000):
+    def hard_slice_chunks(text, max_chars=8000):
         from chunking import clean_text
         text = clean_text(text)
         return [text[i:i + max_chars] for i in range(0, len(text), max_chars)]
 
+    def translate_with_fallback(chunk, depth=0, max_depth=5, min_chars=500):
+        if not chunk.strip():
+            return chunk
+        try:
+            time.sleep(1)
+            res = translator.translate(chunk, src="it", dest="en")
+            if res.text == chunk and len(chunk) > min_chars and depth < max_depth:
+                # Silent-failure signature: API returned the input unchanged, no exception.
+                print(f"    [~] silent failure detected at {len(chunk)} chars (depth={depth}), "
+                      f"splitting and retrying", flush=True)
+                mid = len(chunk) // 2
+                return (translate_with_fallback(chunk[:mid], depth + 1, max_depth, min_chars)
+                        + translate_with_fallback(chunk[mid:], depth + 1, max_depth, min_chars))
+            return res.text
+        except Exception as e:
+            if len(chunk) > min_chars and depth < max_depth:
+                mid = len(chunk) // 2
+                return (translate_with_fallback(chunk[:mid], depth + 1, max_depth, min_chars)
+                        + translate_with_fallback(chunk[mid:], depth + 1, max_depth, min_chars))
+            print(f"    [!] giving up after {depth} retries on {len(chunk)}-char chunk: {e}", flush=True)
+            return chunk
+
     files = [f for f in os.listdir(CLEANED_TXT_DIR) if f.endswith(".txt")]
     print(f"[translate] {len(files)} cleaned files to translate", flush=True)
 
-    consecutive_failures = 0
     for i, filename in enumerate(files, 1):
         out_path = os.path.join(CLEANED_TRANSLATED_DIR, filename)
         if os.path.exists(out_path):
             continue
         text = open(os.path.join(CLEANED_TXT_DIR, filename), encoding="utf-8").read()
         chunks = hard_slice_chunks(text)
-        translated_parts = []
-        for chunk_id, chunk_text_ in enumerate(chunks):
-            try:
-                time.sleep(1)
-                res = translator.translate(chunk_text_, src="it", dest="en")
-                translated_parts.append(res.text)
-                consecutive_failures = 0
-            except Exception as e:
-                consecutive_failures += 1
-                print(f"  [!] translate failed {filename} chunk {chunk_id} "
-                      f"(consecutive_failures={consecutive_failures}): {e}", flush=True)
-                translated_parts.append(rec["text"])
+        translated_parts = [translate_with_fallback(chunk) for chunk in chunks]
         with open(out_path, "w", encoding="utf-8") as f:
             f.write("\n\n".join(translated_parts))
         if i % 20 == 0:

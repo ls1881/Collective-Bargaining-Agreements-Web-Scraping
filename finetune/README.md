@@ -130,7 +130,17 @@ python infer_batch_mlx.py --stage translate          # re-translate cleaned text
     small held-out eval set — expected drift at 1000x the scale).
 - **Translation**: re-translates cleaned Italian text to English via `googletrans` (free/
   unofficial API, rate-limited to 1 request/sec — CPU + network only, no GPU/MLX involved).
-  Output: `output/italy_translated_txts_cleaned/`.
+  Chunked at 8,000 chars (not the original notebook's 2,000) after empirically finding request
+  latency is roughly constant regardless of payload size up to the point the unofficial API
+  starts silently failing (~14,200-14,400 chars — it returns the input text unchanged with no
+  error, and that ceiling varies by document). A detector catches this signature (output
+  byte-identical to input) and automatically retries with the chunk split in half. Completed
+  the full corpus — 1,360/1,360 files, 0 unrecovered failures, 3 silent-failures caught and
+  resolved by the retry logic. Output: `output/italy_translated_txts_cleaned/`.
+
+`output/` (~424MB total) is **not committed to this repo** — it's fully regenerable from the
+adapters via the three commands above, run against a local copy of the scraped corpus. See
+[`../README_Italy`](../README_Italy) for where the raw scraped text it depends on lives.
 
 ## Repository layout
 

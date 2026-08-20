@@ -1,0 +1,13 @@
+# Full-corpus pipeline outputs — large (400MB+), regenerable from finetune/adapters/ + the
+# commands in finetune/README.md. Kept local-only rather than committed.
+finetune/output/
+
+# Python
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
